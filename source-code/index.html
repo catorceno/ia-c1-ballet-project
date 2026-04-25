@@ -1,0 +1,1241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ballet Pose Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --gold: #c9a84c;
+    --gold-light: #e8d5a3;
+    --gold-dim: #7a6230;
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: rgba(201,168,76,0.2);
+    --text: #f0ead8;
+    --text-muted: #8a8478;
+    --battement: #e8d5a3;
+    --cambre: #c97a6a;
+    --neutral: #5a6a5a;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  header {
+    width: 100%;
+    text-align: center;
+    padding: 2.5rem 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #0f0f1a 0%, transparent 100%);
+  }
+
+  header h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    color: var(--gold-light);
+  }
+
+  header h1 em {
+    font-style: italic;
+    color: var(--gold);
+  }
+
+  header p {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-top: 0.4rem;
+  }
+
+  .main {
+    width: 100%;
+    max-width: 900px;
+    padding: 2rem 1rem 4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  /* Mode tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    width: fit-content;
+    margin: 0 auto;
+  }
+
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 0.65rem 2rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .tab-btn:first-child { border-right: 1px solid var(--border); }
+
+  .tab-btn.active {
+    background: var(--gold-dim);
+    color: var(--gold-light);
+  }
+
+  .tab-btn:not(.active):hover {
+    background: var(--surface2);
+    color: var(--text);
+  }
+
+  .tab-icon { font-size: 14px; }
+
+  /* Panels */
+  .panel { display: none; flex-direction: column; gap: 1.2rem; }
+  .panel.active { display: flex; }
+
+  /* Canvas area */
+  .stage {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+  }
+
+  .stage canvas {
+    display: block;
+    max-width: 100%;
+    border-radius: 1px;
+  }
+
+  .stage-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 3rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+  }
+
+  .stage-placeholder svg { opacity: 0.3; }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .btn {
+    background: transparent;
+    border: 1px solid var(--gold-dim);
+    color: var(--gold-light);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 0.6rem 1.5rem;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s;
+  }
+
+  .btn:hover { background: var(--gold-dim); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .btn.primary { background: var(--gold-dim); }
+  .btn.danger { border-color: #7a3030; color: #e8a0a0; }
+  .btn.danger:hover { background: #7a3030; }
+
+  /* Labels display */
+  .labels {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .label-card {
+    flex: 1;
+    min-width: 120px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .label-card .name {
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .label-card .bar-wrap {
+    height: 4px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .label-card .bar {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.15s ease;
+    width: 0%;
+  }
+
+  .label-card .pct {
+    font-size: 1.1rem;
+    font-family: 'Playfair Display', serif;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .label-card[data-class="battement"] .bar { background: var(--battement); }
+  .label-card[data-class="cambre"] .bar { background: var(--cambre); }
+  .label-card[data-class="neutral"] .bar { background: var(--neutral); }
+  .label-card.highlight { border-color: var(--gold); }
+
+  /* Current pose badge */
+  .pose-badge {
+    text-align: center;
+    padding: 0.5rem 1rem;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-style: italic;
+    letter-spacing: 0.05em;
+    color: var(--gold);
+    min-height: 2.5rem;
+    transition: opacity 0.3s;
+  }
+
+  /* Status */
+  .status-bar {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .dot.active { background: #5ab87a; animation: pulse 1.5s infinite; }
+  .dot.analyzing { background: var(--gold); animation: pulse 0.8s infinite; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Video upload area */
+  .upload-zone {
+    border: 1px dashed var(--border);
+    border-radius: 2px;
+    padding: 2.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+  }
+
+  .upload-zone:hover { border-color: var(--gold-dim); background: var(--surface2); }
+  .upload-zone.drag-over { border-color: var(--gold); background: var(--surface2); }
+
+  .upload-zone input { display: none; }
+
+  .upload-zone .up-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    color: var(--text-muted);
+    margin-bottom: 0.3rem;
+  }
+
+  .upload-zone .up-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* Progress bar */
+  .progress-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 1rem 1.25rem;
+    display: none;
+  }
+
+  .progress-wrap.show { display: block; }
+
+  .progress-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 0.6rem;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .progress-bar-outer {
+    height: 3px;
+    background: var(--surface2);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .progress-bar-inner {
+    height: 100%;
+    background: var(--gold);
+    border-radius: 2px;
+    transition: width 0.2s;
+    width: 0%;
+  }
+
+  /* Video playback */
+  .video-stage {
+    position: relative;
+    display: none;
+  }
+
+  .video-stage.show { display: block; }
+
+  .video-stage video {
+    display: block;
+    width: 100%;
+    max-height: 480px;
+    background: #000;
+  }
+
+  .video-stage canvas#overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  /* Playback pose label overlay */
+  .playback-label {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10,10,15,0.85);
+    border: 1px solid var(--gold-dim);
+    border-radius: 2px;
+    padding: 0.4rem 1.2rem;
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-style: italic;
+    color: var(--gold-light);
+    letter-spacing: 0.05em;
+    display: none;
+    white-space: nowrap;
+  }
+
+  .playback-label.show { display: block; }
+
+  /* Decorative line */
+  .divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+    margin: 0.5rem 0;
+  }
+
+  /* ── Timeline scrubber ── */
+  .timeline-wrap {
+    display: none;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .timeline-wrap.show { display: flex; }
+
+  .timeline-bar {
+    position: relative;
+    height: 30px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  .timeline-segments {
+    position: absolute;
+    inset: 0;
+    display: flex;
+  }
+
+  .timeline-segment {
+    height: 100%;
+    flex-shrink: 0;
+    transition: filter 0.1s;
+  }
+  .timeline-segment:hover { filter: brightness(1.3); }
+
+  .timeline-cursor {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: #fff;
+    box-shadow: 0 0 4px rgba(255,255,255,0.6);
+    pointer-events: none;
+    left: 0;
+    transition: left 0.08s linear;
+  }
+
+  .timeline-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .timeline-time {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .timeline-legend {
+    display: flex;
+    gap: 1.1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: lowercase;
+  }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Detections list ── */
+  .detections-wrap {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .detections-wrap.show { display: block; }
+
+  .detections-header {
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding: 0.65rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .detections-list {
+    max-height: 220px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--gold-dim) transparent;
+  }
+
+  .detection-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(201,168,76,0.06);
+    transition: background 0.12s;
+  }
+  .detection-item:last-child { border-bottom: none; }
+  .detection-item:hover { background: var(--surface2); }
+  .detection-item.active {
+    background: var(--surface2);
+    border-left: 2px solid var(--gold);
+    padding-left: calc(1rem - 2px);
+  }
+
+  .det-color {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .det-pose {
+    font-family: 'Playfair Display', serif;
+    font-style: italic;
+    font-size: 0.9rem;
+    flex: 1;
+  }
+
+  .det-time {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .det-conf {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    min-width: 38px;
+    text-align: right;
+  }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .labels { flex-direction: column; }
+    .controls { justify-content: center; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Ballet <em>Pose</em> Detector</h1>
+  <p>Análisis de postura con PoseNet · Teachable Machine</p>
+</header>
+
+<main class="main">
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn active" id="tab-cam" onclick="switchTab('camera')">
+      <span class="tab-icon">◎</span> Cámara
+    </button>
+    <button class="tab-btn" id="tab-vid" onclick="switchTab('video')">
+      <span class="tab-icon">▶</span> Video
+    </button>
+  </div>
+
+  <!-- ═══ CAMERA PANEL ═══ -->
+  <div class="panel active" id="panel-camera">
+
+    <div class="controls">
+      <button class="btn primary" id="btn-start-cam" onclick="startCamera()">Iniciar cámara</button>
+      <button class="btn danger" id="btn-stop-cam" onclick="stopCamera()" disabled>Detener</button>
+      <div class="status-bar">
+        <div class="dot" id="cam-dot"></div>
+        <span id="cam-status">Modelo no cargado</span>
+      </div>
+    </div>
+
+    <div class="stage" id="cam-stage">
+      <div class="stage-placeholder" id="cam-placeholder">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="18" r="5" stroke="#c9a84c" stroke-width="1.5"/>
+          <line x1="24" y1="23" x2="24" y2="34" stroke="#c9a84c" stroke-width="1.5"/>
+          <line x1="15" y1="27" x2="33" y2="27" stroke="#c9a84c" stroke-width="1.5"/>
+          <line x1="24" y1="34" x2="17" y2="43" stroke="#c9a84c" stroke-width="1.5"/>
+          <line x1="24" y1="34" x2="31" y2="43" stroke="#c9a84c" stroke-width="1.5"/>
+        </svg>
+        <span>Presiona "Iniciar cámara"</span>
+      </div>
+      <canvas id="cam-canvas" style="display:none;"></canvas>
+    </div>
+
+    <div class="pose-badge" id="cam-pose-badge"></div>
+
+    <div class="labels" id="cam-labels"></div>
+
+  </div>
+
+  <!-- ═══ VIDEO PANEL ═══ -->
+  <div class="panel" id="panel-video">
+
+    <div class="upload-zone" id="upload-zone"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="handleDrop(event)">
+      <input type="file" id="file-input" accept="video/mp4,video/*" onchange="handleFile(this.files[0])">
+      <p class="up-title">Sube un video</p>
+      <p class="up-sub">MP4 · arrastra o haz clic</p>
+    </div>
+
+    <div class="controls" id="vid-controls" style="display:none;">
+      <button class="btn primary" id="btn-analyze" onclick="analyzeVideo()">Analizar video</button>
+      <button class="btn" id="btn-play" onclick="togglePlay()" disabled>▶ Reproducir</button>
+      <div class="status-bar">
+        <div class="dot" id="vid-dot"></div>
+        <span id="vid-status">Video cargado</span>
+      </div>
+    </div>
+
+    <div class="progress-wrap" id="progress-wrap">
+      <div class="progress-label">
+        <span>Analizando fotogramas</span>
+        <span id="progress-pct">0%</span>
+      </div>
+      <div class="progress-bar-outer">
+        <div class="progress-bar-inner" id="progress-bar"></div>
+      </div>
+    </div>
+
+    <div class="video-stage" id="video-stage">
+      <video id="vid-player" playsinline preload="auto"></video>
+      <canvas id="overlay"></canvas>
+      <div class="playback-label" id="playback-label"></div>
+    </div>
+
+    <!-- Timeline scrubber -->
+    <div class="timeline-wrap" id="timeline-wrap">
+      <div class="timeline-bar" id="timeline-bar">
+        <div class="timeline-segments" id="timeline-segments"></div>
+        <div class="timeline-cursor" id="timeline-cursor"></div>
+      </div>
+      <div class="timeline-footer">
+        <span class="timeline-time">0:00</span>
+        <div class="timeline-legend" id="timeline-legend"></div>
+        <span class="timeline-time" id="timeline-duration">0:00</span>
+      </div>
+    </div>
+
+    <!-- Detections list -->
+    <div class="detections-wrap" id="detections-wrap">
+      <div class="detections-header">Detecciones — clic para ir</div>
+      <div class="detections-list" id="detections-list"></div>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- ══ Hidden canvas for video frame extraction ══ -->
+<canvas id="frame-canvas" style="display:none;"></canvas>
+
+<script>
+// ────────────────────────────────────────────
+// Config
+// ────────────────────────────────────────────
+const MODEL_URL = './model/';
+const ANALYSIS_FPS = 12;
+const MIN_CONF = 0.5;
+const POSE_COLOR = '#4fc3f7';
+const POSE_ALPHA = 0.9;
+
+// Palette for dynamic class colors
+const CLASS_PALETTE = ['#e8b96a','#c97a6a','#6ab9c9','#9ac96a','#b96ac9','#6a9ac9','#c9b96a'];
+let classColorMap = {};
+
+function getClassColor(className) {
+  if (!classColorMap[className]) {
+    const idx = Object.keys(classColorMap).length;
+    classColorMap[className] = CLASS_PALETTE[idx % CLASS_PALETTE.length];
+  }
+  return classColorMap[className];
+}
+
+function fmtTime(t) {
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+let model = null;
+let webcam = null;
+let camRunning = false;
+let camCtx = null;
+let maxPredictions = 0;
+let camRAF = null;
+
+// Video analysis data
+let videoFrameData = []; // [{t, pose, predictions}]
+let videoLoaded = false;
+let videoAnalyzed = false;
+let playbackRAF = null;
+
+// ────────────────────────────────────────────
+// Tabs
+// ────────────────────────────────────────────
+function switchTab(mode) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + mode).classList.add('active');
+  document.getElementById('tab-' + (mode === 'camera' ? 'cam' : 'vid')).classList.add('active');
+  if (mode === 'video') stopCamera();
+}
+
+// ────────────────────────────────────────────
+// Load model (shared)
+// ────────────────────────────────────────────
+async function loadModel() {
+  if (model) return model;
+  model = await tmPose.load(MODEL_URL + 'model.json', MODEL_URL + 'metadata.json');
+  maxPredictions = model.getTotalClasses();
+  return model;
+}
+
+// ────────────────────────────────────────────
+// CAMERA MODE
+// ────────────────────────────────────────────
+async function startCamera() {
+  const btnStart = document.getElementById('btn-start-cam');
+  const btnStop = document.getElementById('btn-stop-cam');
+  const dot = document.getElementById('cam-dot');
+  const status = document.getElementById('cam-status');
+
+  btnStart.disabled = true;
+  dot.className = 'dot analyzing';
+  status.textContent = 'Cargando modelo…';
+
+  try {
+    await loadModel();
+    buildLabelCards('cam-labels');
+
+    const canvas = document.getElementById('cam-canvas');
+    const size = Math.min(window.innerWidth - 32, 640);
+    canvas.width = size; canvas.height = size;
+    camCtx = canvas.getContext('2d');
+
+    webcam = new tmPose.Webcam(size, size, true);
+    await webcam.setup();
+    await webcam.play();
+
+    document.getElementById('cam-placeholder').style.display = 'none';
+    canvas.style.display = 'block';
+
+    camRunning = true;
+    btnStop.disabled = false;
+    dot.className = 'dot active';
+    status.textContent = 'Cámara activa';
+
+    camLoop();
+  } catch (e) {
+    console.error(e);
+    dot.className = 'dot';
+    status.textContent = 'Error: ' + e.message;
+    btnStart.disabled = false;
+  }
+}
+
+async function camLoop() {
+  if (!camRunning || !webcam) return;
+  webcam.update();
+  await camPredict();
+  if (camRunning && webcam) {
+    camRAF = window.requestAnimationFrame(camLoop);
+  }
+}
+
+async function camPredict() {
+  if (!camRunning || !webcam || !webcam.canvas) return;
+  const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+  if (!camRunning || !webcam) return;
+  const predictions = await model.predict(posenetOutput);
+  if (!camRunning || !webcam) return;
+
+  // Draw frame
+  camCtx.drawImage(webcam.canvas, 0, 0);
+  drawPoseOnCtx(camCtx, pose);
+
+  // Update labels
+  let topClass = null; let topProb = 0;
+  predictions.forEach(p => {
+    const card = document.querySelector(`#cam-labels .label-card[data-class="${p.className.toLowerCase()}"]`);
+    if (card) {
+      const pct = Math.round(p.probability * 100);
+      card.querySelector('.pct').textContent = pct + '%';
+      card.querySelector('.bar').style.width = pct + '%';
+      card.classList.toggle('highlight', pct > 60);
+    }
+    if (p.probability > topProb) { topProb = p.probability; topClass = p.className; }
+  });
+
+  const badge = document.getElementById('cam-pose-badge');
+  badge.textContent = topProb > 0.55 ? topClass : '';
+}
+
+function stopCamera() {
+  camRunning = false;
+  if (camRAF) { cancelAnimationFrame(camRAF); camRAF = null; }
+  if (webcam) { try { webcam.stop(); } catch(e){} webcam = null; }
+  document.getElementById('cam-canvas').style.display = 'none';
+  document.getElementById('cam-placeholder').style.display = 'flex';
+  document.getElementById('btn-start-cam').disabled = false;
+  document.getElementById('btn-stop-cam').disabled = true;
+  document.getElementById('cam-dot').className = 'dot';
+  document.getElementById('cam-status').textContent = 'Detenido';
+  document.getElementById('cam-pose-badge').textContent = '';
+}
+
+// ────────────────────────────────────────────
+// VIDEO MODE
+// ────────────────────────────────────────────
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('upload-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+}
+
+function handleFile(file) {
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const vid = document.getElementById('vid-player');
+  vid.src = url;
+  vid.onloadedmetadata = () => {
+    videoLoaded = true;
+    videoAnalyzed = false;
+    videoFrameData = [];
+    classColorMap = {};
+    document.getElementById('upload-zone').style.display = 'none';
+    document.getElementById('vid-controls').style.display = 'flex';
+    document.getElementById('video-stage').classList.add('show');
+    document.getElementById('vid-status').textContent = `Duración: ${vid.duration.toFixed(1)}s`;
+    document.getElementById('btn-play').disabled = true;
+    document.getElementById('playback-label').classList.remove('show');
+    document.getElementById('timeline-wrap').classList.remove('show');
+    document.getElementById('detections-wrap').classList.remove('show');
+
+    const overlay = document.getElementById('overlay');
+    overlay.width = vid.videoWidth;
+    overlay.height = vid.videoHeight;
+
+    const frameCanvas = document.getElementById('frame-canvas');
+    frameCanvas.width = vid.videoWidth;
+    frameCanvas.height = vid.videoHeight;
+  };
+}
+
+async function analyzeVideo() {
+  if (!videoLoaded) return;
+  const vid = document.getElementById('vid-player');
+  const dot = document.getElementById('vid-dot');
+  const status = document.getElementById('vid-status');
+  const progress = document.getElementById('progress-wrap');
+  const bar = document.getElementById('progress-bar');
+  const pctLabel = document.getElementById('progress-pct');
+  const btnAnalyze = document.getElementById('btn-analyze');
+
+  btnAnalyze.disabled = true;
+  dot.className = 'dot analyzing';
+  status.textContent = 'Cargando modelo…';
+
+  try {
+    await loadModel();
+  } catch(e) {
+    status.textContent = 'Error cargando modelo: ' + e.message;
+    btnAnalyze.disabled = false;
+    return;
+  }
+
+  const frameCanvas = document.getElementById('frame-canvas');
+  const frameCtx = frameCanvas.getContext('2d');
+  const duration = vid.duration;
+  const interval = 1 / ANALYSIS_FPS;
+  const totalFrames = Math.ceil(duration / interval);
+
+  videoFrameData = [];
+  progress.classList.add('show');
+  vid.pause();
+
+  status.textContent = 'Analizando…';
+
+  for (let i = 0; i < totalFrames; i++) {
+    const t = i * interval;
+    if (t > duration) break;
+
+    await seekTo(vid, t);
+    frameCtx.drawImage(vid, 0, 0, frameCanvas.width, frameCanvas.height);
+
+    const { pose, posenetOutput } = await model.estimatePose(frameCanvas);
+    const predictions = await model.predict(posenetOutput);
+
+    videoFrameData.push({ t, pose, predictions: predictions.map(p => ({...p})) });
+
+    const pct = Math.round(((i + 1) / totalFrames) * 100);
+    bar.style.width = pct + '%';
+    pctLabel.textContent = pct + '%';
+  }
+
+  progress.classList.remove('show');
+  videoAnalyzed = true;
+  vid.currentTime = 0;
+  dot.className = 'dot active';
+  status.textContent = `${videoFrameData.length} fotogramas analizados`;
+  document.getElementById('btn-play').disabled = false;
+  btnAnalyze.textContent = 'Re-analizar';
+  btnAnalyze.disabled = false;
+  buildTimeline();
+  buildDetections();
+}
+
+function seekTo(vid, time) {
+  return new Promise(resolve => {
+    vid.onseeked = resolve;
+    vid.currentTime = time;
+  });
+}
+
+function togglePlay() {
+  const vid = document.getElementById('vid-player');
+  const btn = document.getElementById('btn-play');
+  if (vid.paused) {
+    vid.play();
+    btn.textContent = '⏸ Pausar';
+    startPlaybackLoop();
+  } else {
+    vid.pause();
+    btn.textContent = '▶ Reproducir';
+    if (playbackRAF) { cancelAnimationFrame(playbackRAF); playbackRAF = null; }
+  }
+  vid.onended = () => {
+    btn.textContent = '▶ Reproducir';
+    document.getElementById('vid-dot').className = 'dot active';
+  };
+}
+
+function startPlaybackLoop() {
+  const vid = document.getElementById('vid-player');
+  const overlay = document.getElementById('overlay');
+  const overlayCtx = overlay.getContext('2d');
+  const label = document.getElementById('playback-label');
+
+  function loop() {
+    if (vid.paused || vid.ended) return;
+    const ct = vid.currentTime;
+
+    // Find closest analyzed frame
+    let closest = videoFrameData[0];
+    let minDist = Infinity;
+    for (const frame of videoFrameData) {
+      const d = Math.abs(frame.t - ct);
+      if (d < minDist) { minDist = d; closest = frame; }
+    }
+
+    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+    updateTimelineCursor(ct);
+
+    if (closest) {
+      drawPoseOnCtx(overlayCtx, closest.pose);
+
+      // Find top prediction (exclude neutral)
+      let topClass = null; let topProb = 0;
+      closest.predictions.forEach(p => {
+        if (p.probability > topProb) {
+          topProb = p.probability; topClass = p.className;
+        }
+      });
+
+      if (topClass && topProb > 0.45) {
+        label.textContent = topClass;
+        label.classList.add('show');
+      } else {
+        label.classList.remove('show');
+      }
+    }
+
+    playbackRAF = requestAnimationFrame(loop);
+  }
+
+  playbackRAF = requestAnimationFrame(loop);
+}
+
+// ────────────────────────────────────────────
+// Timeline scrubber
+// ────────────────────────────────────────────
+function buildTimeline() {
+  const vid = document.getElementById('vid-player');
+  const duration = vid.duration;
+  const wrap = document.getElementById('timeline-wrap');
+  const segContainer = document.getElementById('timeline-segments');
+  const legend = document.getElementById('timeline-legend');
+
+  document.getElementById('timeline-duration').textContent = fmtTime(duration);
+  segContainer.innerHTML = '';
+  legend.innerHTML = '';
+  classColorMap = {};
+
+  // Build colored segments per frame
+  videoFrameData.forEach((frame, i) => {
+    let topClass = null; let topProb = 0;
+    frame.predictions.forEach(p => {
+      if (p.probability > topProb) { topProb = p.probability; topClass = p.className; }
+    });
+
+    const nextT = i < videoFrameData.length - 1 ? videoFrameData[i + 1].t : duration;
+    const widthPct = ((nextT - frame.t) / duration) * 100;
+    const color = (topClass && topProb > 0.35) ? getClassColor(topClass) : '#1e1e2e';
+
+    const seg = document.createElement('div');
+    seg.className = 'timeline-segment';
+    seg.style.width = widthPct + '%';
+    seg.style.background = color;
+    seg.title = topClass
+      ? `${topClass} · ${Math.round(topProb * 100)}% · ${fmtTime(frame.t)}`
+      : fmtTime(frame.t);
+    seg.addEventListener('click', (e) => { e.stopPropagation(); seekAndShow(frame.t); });
+    segContainer.appendChild(seg);
+  });
+
+  // Click anywhere on bar to seek
+  const bar = document.getElementById('timeline-bar');
+  bar.onclick = (e) => {
+    const rect = bar.getBoundingClientRect();
+    seekAndShow(((e.clientX - rect.left) / rect.width) * duration);
+  };
+
+  // Build legend from classes used
+  Object.entries(classColorMap).forEach(([cls, color]) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<div class="legend-dot" style="background:${color}"></div><span>${cls}</span>`;
+    legend.appendChild(item);
+  });
+
+  // Listen to timeupdate for cursor when scrubbing manually
+  vid.addEventListener('timeupdate', () => updateTimelineCursor(vid.currentTime));
+
+  wrap.classList.add('show');
+}
+
+function updateTimelineCursor(t) {
+  const vid = document.getElementById('vid-player');
+  if (!vid.duration) return;
+  const cursor = document.getElementById('timeline-cursor');
+  cursor.style.left = ((t / vid.duration) * 100) + '%';
+  highlightActiveDetection(t);
+}
+
+function seekAndShow(t) {
+  const vid = document.getElementById('vid-player');
+  vid.currentTime = t;
+  updateTimelineCursor(t);
+
+  // Render pose overlay at this frame
+  const overlay = document.getElementById('overlay');
+  const overlayCtx = overlay.getContext('2d');
+  const label = document.getElementById('playback-label');
+
+  let closest = videoFrameData[0]; let minDist = Infinity;
+  for (const frame of videoFrameData) {
+    const d = Math.abs(frame.t - t);
+    if (d < minDist) { minDist = d; closest = frame; }
+  }
+
+  overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+  if (closest) {
+    drawPoseOnCtx(overlayCtx, closest.pose);
+    let topClass = null; let topProb = 0;
+    closest.predictions.forEach(p => {
+      if (p.probability > topProb) { topProb = p.probability; topClass = p.className; }
+    });
+    if (topClass && topProb > 0.45) {
+      label.textContent = topClass;
+      label.classList.add('show');
+    } else {
+      label.classList.remove('show');
+    }
+  }
+}
+
+// ────────────────────────────────────────────
+// Detections list
+// ────────────────────────────────────────────
+let detectionEvents = [];
+
+function buildDetections() {
+  const wrap = document.getElementById('detections-wrap');
+  const list = document.getElementById('detections-list');
+  list.innerHTML = '';
+  detectionEvents = [];
+
+  // Group consecutive frames with same top class into events
+  let currentEvent = null;
+  videoFrameData.forEach(frame => {
+    let topClass = null; let topProb = 0;
+    frame.predictions.forEach(p => {
+      if (p.probability > topProb) { topProb = p.probability; topClass = p.className; }
+    });
+
+    if (!currentEvent || currentEvent.className !== topClass) {
+      currentEvent = { className: topClass, t: frame.t, maxProb: topProb };
+      detectionEvents.push(currentEvent);
+    } else if (topProb > currentEvent.maxProb) {
+      currentEvent.maxProb = topProb;
+    }
+  });
+
+  detectionEvents.forEach((ev, idx) => {
+    const color = ev.className ? getClassColor(ev.className) : '#444';
+    const item = document.createElement('div');
+    item.className = 'detection-item';
+    item.dataset.idx = idx;
+    item.innerHTML = `
+      <div class="det-color" style="background:${color}"></div>
+      <span class="det-pose" style="color:${color}">${ev.className || '—'}</span>
+      <span class="det-time">${fmtTime(ev.t)}</span>
+      <span class="det-conf">${Math.round(ev.maxProb * 100)}%</span>`;
+    item.addEventListener('click', () => seekAndShow(ev.t));
+    list.appendChild(item);
+  });
+
+  wrap.classList.add('show');
+}
+
+function highlightActiveDetection(t) {
+  if (!detectionEvents.length) return;
+  // Find which event we're in
+  let activeIdx = 0;
+  for (let i = 0; i < detectionEvents.length; i++) {
+    const nextT = i < detectionEvents.length - 1 ? detectionEvents[i + 1].t : Infinity;
+    if (t >= detectionEvents[i].t && t < nextT) { activeIdx = i; break; }
+  }
+  document.querySelectorAll('#detections-list .detection-item').forEach((el, i) => {
+    el.classList.toggle('active', i === activeIdx);
+  });
+  // Scroll active item into view if needed
+  const active = document.querySelector('#detections-list .detection-item.active');
+  if (active) active.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// ────────────────────────────────────────────
+// Pose drawing
+// ────────────────────────────────────────────
+const SKELETON_PAIRS = [
+  [5,6],[5,7],[7,9],[6,8],[8,10],
+  [5,11],[6,12],[11,12],
+  [11,13],[13,15],[12,14],[14,16]
+];
+
+function drawPoseOnCtx(ctx, pose) {
+  if (!pose) return;
+  const kps = pose.keypoints;
+
+  ctx.save();
+  ctx.strokeStyle = POSE_COLOR;
+  ctx.fillStyle = POSE_COLOR;
+  ctx.globalAlpha = POSE_ALPHA;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+
+  // Skeleton
+  SKELETON_PAIRS.forEach(([a, b]) => {
+    const kpA = kps[a]; const kpB = kps[b];
+    if (kpA.score >= MIN_CONF && kpB.score >= MIN_CONF) {
+      ctx.beginPath();
+      ctx.moveTo(kpA.position.x, kpA.position.y);
+      ctx.lineTo(kpB.position.x, kpB.position.y);
+      ctx.stroke();
+    }
+  });
+
+  // Keypoints
+  kps.forEach(kp => {
+    if (kp.score >= MIN_CONF) {
+      ctx.beginPath();
+      ctx.arc(kp.position.x, kp.position.y, 4, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  });
+
+  ctx.restore();
+}
+
+// ────────────────────────────────────────────
+// Build label cards
+// ────────────────────────────────────────────
+function buildLabelCards(containerId) {
+  const container = document.getElementById(containerId);
+  if (!model || container.children.length > 0) return;
+  const classes = [];
+  for (let i = 0; i < maxPredictions; i++) classes.push(model.getClassLabels()[i] || ('Clase ' + i));
+  container.innerHTML = '';
+  classes.forEach(cls => {
+    const key = cls.toLowerCase();
+    const card = document.createElement('div');
+    card.className = 'label-card';
+    card.dataset.class = key;
+    card.innerHTML = `
+      <span class="name">${cls}</span>
+      <div class="bar-wrap"><div class="bar"></div></div>
+      <span class="pct">0%</span>`;
+    container.appendChild(card);
+  });
+}
+
+// Make model.getClassLabels safe
+function safeGetClassLabels() {
+  if (model && model.getClassLabels) return model.getClassLabels();
+  if (model && model.getLabels) return model.getLabels();
+  return [];
+}
+// Patch buildLabelCards to use fallback
+const _build = buildLabelCards;
+window.buildLabelCards = function(id) {
+  const container = document.getElementById(id);
+  if (!model || container.children.length > 0) return;
+  let classes = [];
+  try { classes = model.getClassLabels(); } catch(e) {}
+  if (!classes || classes.length === 0) {
+    for (let i = 0; i < maxPredictions; i++) classes.push('Clase ' + i);
+  }
+  container.innerHTML = '';
+  classes.forEach(cls => {
+    const key = cls.toLowerCase();
+    const card = document.createElement('div');
+    card.className = 'label-card';
+    card.dataset.class = key;
+    card.innerHTML = `
+      <span class="name">${cls}</span>
+      <div class="bar-wrap"><div class="bar"></div></div>
+      <span class="pct">0%</span>`;
+    container.appendChild(card);
+  });
+};
+</script>
+</body>
+</html>
